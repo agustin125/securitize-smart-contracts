@@ -1,5 +1,6 @@
 import { ethers } from "hardhat";
 import assert from "assert";
+const NULL_ADDRESS = ethers.constants.AddressZero;
 
 describe("Marketplace Tests", function () {
   let marketplace: any;
@@ -39,7 +40,7 @@ describe("Marketplace Tests", function () {
             { name: "amount", type: "uint256" },
             { name: "price", type: "uint256" },
             { name: "nonce", type: "uint256" },
-            { name: "seller", type: "address" },
+            { name: "signer", type: "address" },
         ],
     };
 
@@ -48,14 +49,17 @@ describe("Marketplace Tests", function () {
         amount: listAmount,
         price: price,
         nonce: nonce,
-        seller: seller.address,
+        signer: seller.address,
     };
 
+    console.log(" seller.address",  seller.address);
     await token.connect(seller).approve(marketplace.address, listAmount);
 
     const signature = await seller._signTypedData(domain, types, value);
+    const structHash = ethers.utils._TypedDataEncoder.hash(domain, types, value);
+    console.log("Generated structHash:", structHash);
 
-    await marketplace.listItem(token.address, listAmount, price, nonce, signature);
+    await marketplace.listItem(token.address, listAmount, price, nonce, signature, seller.address);
 
     const listing = await marketplace.listings(0);
     assert.strictEqual(listing.seller, seller.address, "Seller address mismatch");
@@ -70,7 +74,7 @@ describe("Marketplace Tests", function () {
     const price = ethers.utils.parseEther("1");
 
     await token.connect(seller).approve(marketplace.address, listAmount);
-    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x");
+    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x", NULL_ADDRESS);
 
     const listing = await marketplace.listings(0);
     assert.strictEqual(listing.seller, seller.address, "Seller address mismatch");
@@ -84,7 +88,7 @@ describe("Marketplace Tests", function () {
     const price = ethers.utils.parseEther("1");
 
     await token.connect(seller).approve(marketplace.address, listAmount);
-    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x");
+    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x", NULL_ADDRESS);
 
     await marketplace.connect(buyer).purchaseItem(0, { value: price });
 
@@ -100,7 +104,7 @@ describe("Marketplace Tests", function () {
     const price = ethers.utils.parseEther("1");
 
     await token.connect(seller).approve(marketplace.address, listAmount);
-    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x");
+    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x", NULL_ADDRESS);
     await marketplace.connect(buyer).purchaseItem(0, { value: price });
 
     const initialBalance = await ethers.provider.getBalance(seller.address);

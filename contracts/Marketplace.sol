@@ -25,7 +25,7 @@ contract Marketplace is EIP712 {
     event FundsWithdrawn(address indexed seller, uint256 amount);
 
     bytes32 private constant _LIST_ITEM_TYPEHASH = keccak256(
-        "ListItem(address token,uint256 amount,uint256 price,uint256 nonce,address seller)"
+        "ListItem(address token,uint256 amount,uint256 price,uint256 nonce,address signer)"
     );
 
     constructor() EIP712("Marketplace", "1") {}
@@ -35,7 +35,8 @@ contract Marketplace is EIP712 {
         uint256 amount,
         uint256 price,
         uint256 nonce,
-        bytes memory signature
+        bytes memory signature,
+        address signer
     ) external {
         require(amount > 0, "Amount must be greater than zero");
         require(price > 0, "Price must be greater than zero");
@@ -51,7 +52,7 @@ contract Marketplace is EIP712 {
                     amount,
                     price,
                     nonce,
-                    msg.sender
+                    signer
                 )
             );
 
