@@ -17,32 +17,71 @@ contract Marketplace is EIP712 {
 
     mapping(uint256 => Listing) public listings;
     mapping(address => uint256) public earnings;
+    mapping(address => uint256) public nonces;
     uint256 public listingIdCounter;
 
     event ItemListed(uint256 indexed listingId, address indexed seller, address indexed token, uint256 amount, uint256 price);
     event ItemPurchased(uint256 indexed listingId, address indexed buyer, uint256 amount, uint256 price);
     event FundsWithdrawn(address indexed seller, uint256 amount);
 
-    bytes32 private constant _TRANSFER_TYPEHASH = keccak256("Transfer(address token,address from,address to,uint256 amount,uint256 nonce)");
-
-    mapping(address => uint256) public nonces;
+    bytes32 private constant _LIST_ITEM_TYPEHASH = keccak256(
+        "ListItem(address token,uint256 amount,uint256 price,uint256 nonce,address seller)"
+    );
 
     constructor() EIP712("Marketplace", "1") {}
 
-    function listItem(address token, uint256 amount, uint256 price) external {
+    function listItem(
+        address token,
+        uint256 amount,
+        uint256 price,
+        uint256 nonce,
+        bytes memory signature
+    ) external {
         require(amount > 0, "Amount must be greater than zero");
         require(price > 0, "Price must be greater than zero");
 
-        IERC20(token).transferFrom(msg.sender, address(this), amount);
+        address seller;
+
+        if (signature.length > 0) {
+            // Recover signer from signature
+            bytes32 structHash = keccak256(
+                abi.encode(
+                    _LIST_ITEM_TYPEHASH,
+                    token,
+                    amount,
+                    price,
+                    nonce,
+                    msg.sender
+                )
+            );
+
+            bytes32 digest = _hashTypedDataV4(structHash);
+            seller = digest.recover(signature);
+
+            require(seller != address(0), "Invalid signature");
+            require(nonce == nonces[seller], "Invalid nonce");
+
+            nonces[seller]++;
+        } else {
+            seller = msg.sender;
+        }
+
+        require(seller == msg.sender || IERC20(token).allowance(seller, address(this)) >= amount, "Insufficient allowance");
+
+        if (seller != msg.sender) {
+            IERC20(token).transferFrom(seller, address(this), amount);
+        } else {
+            IERC20(token).transferFrom(msg.sender, address(this), amount);
+        }
 
         listings[listingIdCounter] = Listing({
-            seller: msg.sender,
+            seller: seller,
             token: token,
             amount: amount,
             price: price
         });
 
-        emit ItemListed(listingIdCounter, msg.sender, token, amount, price);
+        emit ItemListed(listingIdCounter, seller, token, amount, price);
         listingIdCounter++;
     }
 
@@ -68,34 +107,5 @@ contract Marketplace is EIP712 {
         payable(msg.sender).transfer(amount);
 
         emit FundsWithdrawn(msg.sender, amount);
-    }
-
-    function transferWithSignature(
-        address token,
-        address from,
-        address to,
-        uint256 amount,
-        uint256 nonce,
-        bytes memory signature
-    ) external {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                _TRANSFER_TYPEHASH,
-                token,
-                from,
-                to,
-                amount,
-                nonce
-            )
-        );
-
-        bytes32 digest = _hashTypedDataV4(structHash);
-        address signer = digest.recover(signature);
-
-        require(signer == from, "Invalid signature");
-        require(nonce == nonces[from], "Invalid nonce");
-
-        nonces[from]++;
-        IERC20(token).transferFrom(from, to, amount);
     }
 }

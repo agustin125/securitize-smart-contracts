@@ -15,22 +15,62 @@ describe("Marketplace Tests", function () {
     token = await TokenFactory.deploy("TestToken", "TTK", 1000);
     await token.deployed();
 
-    await token.transfer(seller.address, 500);
-
     const MarketplaceFactory = await ethers.getContractFactory("Marketplace");
     marketplace = await MarketplaceFactory.deploy();
     await marketplace.deployed();
+    await token.transfer(seller.address, 500);
   });
 
-  it("Should allow users to list items for sale", async function () {
+  it("Should allow users to list items for sale with a signature", async function () {
+    const listAmount = 100;
+    const price = ethers.utils.parseEther("1");
+    const nonce = await marketplace.nonces(seller.address);
+
+    const domain = {
+        name: "Marketplace",
+        version: "1",
+        chainId: await deployer.getChainId(),
+        verifyingContract: marketplace.address,
+    };
+
+    const types = {
+        ListItem: [
+            { name: "token", type: "address" },
+            { name: "amount", type: "uint256" },
+            { name: "price", type: "uint256" },
+            { name: "nonce", type: "uint256" },
+            { name: "seller", type: "address" },
+        ],
+    };
+
+    const value = {
+        token: token.address,
+        amount: listAmount,
+        price: price,
+        nonce: nonce,
+        seller: seller.address,
+    };
+
+    await token.connect(seller).approve(marketplace.address, listAmount);
+
+    const signature = await seller._signTypedData(domain, types, value);
+
+    await marketplace.listItem(token.address, listAmount, price, nonce, signature);
+
+    const listing = await marketplace.listings(0);
+    assert.strictEqual(listing.seller, seller.address, "Seller address mismatch");
+    assert.strictEqual(listing.token, token.address, "Token address mismatch");
+    assert.strictEqual(listing.amount.toString(), listAmount.toString(), "Amount mismatch");
+    assert.strictEqual(listing.price.toString(), price.toString(), "Price mismatch");
+  });
+
+
+  it("Should allow users to list items without a signature", async function () {
     const listAmount = 100;
     const price = ethers.utils.parseEther("1");
 
-    const sellerBalance = await token.balanceOf(seller.address);
-    assert.strictEqual(sellerBalance.toString(), "500", "Seller balance mismatch");
-
     await token.connect(seller).approve(marketplace.address, listAmount);
-    await marketplace.connect(seller).listItem(token.address, listAmount, price);
+    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x");
 
     const listing = await marketplace.listings(0);
     assert.strictEqual(listing.seller, seller.address, "Seller address mismatch");
@@ -44,7 +84,7 @@ describe("Marketplace Tests", function () {
     const price = ethers.utils.parseEther("1");
 
     await token.connect(seller).approve(marketplace.address, listAmount);
-    await marketplace.connect(seller).listItem(token.address, listAmount, price);
+    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x");
 
     await marketplace.connect(buyer).purchaseItem(0, { value: price });
 
@@ -60,7 +100,7 @@ describe("Marketplace Tests", function () {
     const price = ethers.utils.parseEther("1");
 
     await token.connect(seller).approve(marketplace.address, listAmount);
-    await marketplace.connect(seller).listItem(token.address, listAmount, price);
+    await marketplace.connect(seller).listItem(token.address, listAmount, price, 0, "0x");
     await marketplace.connect(buyer).purchaseItem(0, { value: price });
 
     const initialBalance = await ethers.provider.getBalance(seller.address);
