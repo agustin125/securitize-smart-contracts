@@ -17,7 +17,6 @@ contract Marketplace is EIP712 {
 
     mapping(uint256 => Listing) public listings;
     mapping(address => uint256) public earnings;
-    mapping(address => uint256) public nonces;
     uint256 public listingIdCounter;
 
     event ItemListed(uint256 indexed listingId, address indexed seller, address indexed token, uint256 amount, uint256 price);
@@ -25,55 +24,22 @@ contract Marketplace is EIP712 {
     event FundsWithdrawn(address indexed seller, uint256 amount);
 
     bytes32 private constant _LIST_ITEM_TYPEHASH = keccak256(
-        "ListItem(address token,uint256 amount,uint256 price,uint256 nonce,address signer)"
+        "ListItem(address token,uint256 amount,uint256 price,address signer)"
     );
 
     constructor() EIP712("Marketplace", "1") {}
 
-    function listItem(
+    function _listItem(
+        address seller,
         address token,
         uint256 amount,
-        uint256 price,
-        uint256 nonce,
-        bytes memory signature,
-        address signer
-    ) external {
+        uint256 price
+    ) internal {
         require(amount > 0, "Amount must be greater than zero");
         require(price > 0, "Price must be greater than zero");
+        require(IERC20(token).allowance(seller, address(this)) >= amount, "Insufficient allowance");
 
-        address seller;
-
-        if (signature.length > 0) {
-            // Recover signer from signature
-            bytes32 structHash = keccak256(
-                abi.encode(
-                    _LIST_ITEM_TYPEHASH,
-                    token,
-                    amount,
-                    price,
-                    nonce,
-                    signer
-                )
-            );
-
-            bytes32 digest = _hashTypedDataV4(structHash);
-            seller = digest.recover(signature);
-
-            require(seller != address(0), "Invalid signature");
-            require(nonce == nonces[seller], "Invalid nonce");
-
-            nonces[seller]++;
-        } else {
-            seller = msg.sender;
-        }
-
-        require(seller == msg.sender || IERC20(token).allowance(seller, address(this)) >= amount, "Insufficient allowance");
-
-        if (seller != msg.sender) {
-            IERC20(token).transferFrom(seller, address(this), amount);
-        } else {
-            IERC20(token).transferFrom(msg.sender, address(this), amount);
-        }
+        IERC20(token).transferFrom(seller, address(this), amount);
 
         listings[listingIdCounter] = Listing({
             seller: seller,
@@ -84,6 +50,40 @@ contract Marketplace is EIP712 {
 
         emit ItemListed(listingIdCounter, seller, token, amount, price);
         listingIdCounter++;
+    }
+
+    function listItem(
+        address token,
+        uint256 amount,
+        uint256 price
+    ) external {
+        _listItem(msg.sender, token, amount, price);
+    }
+
+    function listItemBehalf(
+        address token,
+        uint256 amount,
+        uint256 price,
+        bytes memory signature,
+        address signer
+    ) external {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                _LIST_ITEM_TYPEHASH,
+                token,
+                amount,
+                price,
+                signer
+            )
+        );
+
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address recoveredSigner = digest.recover(signature);
+
+        require(recoveredSigner != address(0), "Invalid signature");
+        require(recoveredSigner == signer, "Signer mismatch");
+
+        _listItem(signer, token, amount, price);
     }
 
     function purchaseItem(uint256 listingId) external payable {
