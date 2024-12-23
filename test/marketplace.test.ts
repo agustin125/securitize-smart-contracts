@@ -25,7 +25,8 @@ describe("Marketplace Tests", function () {
   it("Should allow users to list items for sale with a signature", async function () {
     const listAmount = 100;
     const price = ethers.utils.parseEther("1");
-
+    const chainId = await deployer.getChainId()
+    console.log("chainId", chainId);
     const domain = {
         name: "Marketplace",
         version: "1",
